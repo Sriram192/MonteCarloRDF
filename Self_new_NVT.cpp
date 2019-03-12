@@ -1,5 +1,8 @@
 //Written by Sriram
 //28/09/2018
+//Self assembly of honeycomb potential taken from Torquato et. al. 2006
+//Also prints rdf whose algorithm has to be verified for the 2D case.
+//The temperature schedule for cooling in simulated annealing is linear in this particular code.
 
 #include<iostream>
 #include<math.h>
@@ -58,7 +61,7 @@ cout<<endl;
 mctry=0;mcacc=0;acceptance=0;
 
 //----------------------------Warming----------------------------------//
-int warm_cycle = 200000;
+int warm_cycle = 50000;
 for(int i=0;i<warm_cycle;i++) // note the number of iterations for the warming loop.
 {
 	NVT_IN();
@@ -111,7 +114,7 @@ ofstream ofs;
 //-------------------------------------MC main---------------------------//
 
 temp = 0.22;
-double tol = 1.0e-4;
+double tol = 1.0e-3;
 char logfile[100];
 	ofstream of1;
 	sprintf(logfile,"log.txt");
@@ -122,13 +125,8 @@ char logfile[100];
 int temp_count = 0;			
 while (temp > tol)
 {
-char RDFfile[80];//what is this?
 
-ofstream ofrdf;
-    sprintf( RDFfile, "rdf%d.dat",temp_count);
-    ofrdf.open (RDFfile, ofstream::out | ofstream::app);
 
-int rdf_count = 0;
 energy = totalenergy();
 	mctry=0;mcacc=0;acceptance=0;
 	for(int i =0; i<ieq;i++)	
@@ -195,8 +193,8 @@ energy = totalenergy();
 		
 		
 		
-			rdfsample(rdf_count);
-			rdf_count +=1;
+//			
+//			rdf_count +=1;
 		
 
 	}
@@ -211,26 +209,12 @@ energy = totalenergy();
 			of1<<temp_count<<"       "<< avpot<<"+-"<<sqrt(pot2 - avpot*avpot)<<"      "<<avpress << " +- " << sqrt(press2 - avpress*avpress)<<"      "<< 1.0/avalpha<<"\n";
 			}else{cerr<< "unable to open log file";}	
 
-	
-	temp = temp * exp(-0.2);
-//	temp = temp*0.95;//New temperature schedule tried on 10//11/2018
+	rdfsample();
+//	temp = temp * exp(-0.2);
+	temp = temp*0.95;//New temperature schedule tried on 10/11/2018
 	temp_count += 1;
 	
-	double idcon = 3.1415*(1/alpha);
-	double rlow, rup, ideal, rbin;
-	if(ofrdf.is_open()) {
-	for(int i=0; i<maxbin; i++)
-	{
-	rlow = double(i)*delr;
-	rup = rlow + delr;
-	ideal = idcon*(rup*rup - rlow*rlow);
-	hist[i] = hist[i]/double(number_of_colloids*rdf_count)/ideal;
-	rbin = rlow + delr/2.0;
-           	 ofrdf << rbin <<"  "<<hist[i]<< "\n";
-	}	
-	}
-	else {cerr << "unable to open file for rdf output \n";}
-    	ofrdf.close();
+	
 
 	
 //write condition for mcacc and pos updation with delta r.
@@ -573,8 +557,13 @@ dE_T= double(-(Enew-Eold)/intemp);
         }
 return;
 }
-void rdfsample(int rdf_count)
+void rdfsample()
 {
+char RDFfile[80];//what is this?
+
+ofstream ofrdf;
+    sprintf( RDFfile, "rdf%d.dat",temp_count);
+    ofrdf.open (RDFfile, ofstream::out | ofstream::app);
 
 double pi = 3.1415926;
 double boxinv = 1.0/box_length;//why are we calaculating this value?
@@ -582,6 +571,8 @@ double hbox = 0.5*box_length;//half box length
 double rij2, r1;//rij2 is rij^square and r1 is the magnitude of the distance between the particles
 int nsample = 0, bin;
 double rijx,rijy,rijz;
+
+int rdf_count = 0;
 	if(rdf_count==0)
 	{
 		for(int i=0; i<maxbin; i++)
@@ -591,33 +582,60 @@ double rijx,rijy,rijz;
 	}
 //this condition just gives "true" for all values of t so why is this expression used here?
 nsample += 1;
-for (int i = 0; i<number_of_colloids; i++) {
-    for(int j=i+1; j<number_of_colloids; j++) {
-       rijx = colloid_x[i] - colloid_y[j] ;
-       rijy = colloid_y[i] - colloid_y[j] ;
+for(int k=0;k<100;k++)
+{	
+cout<<"RDF Step "<<k<<"\n";
+	for(int m=0;m<10000;m++)
+	{
+	MC_NVT();
+	}
+	for (int i = 0; i<number_of_colloids; i++) 
+	{
+    		for(int j=i+1; j<number_of_colloids; j++) 
+    		{
+    		rijx = colloid_x[i] - colloid_y[j] ;
+       		rijy = colloid_y[i] - colloid_y[j] ;
 //       rij.z = colloid_z[i] - colloid_z[j] ;
        
-       rijx = periodic(rijx);
-       rijy = periodic(rijy);
+       		rijx = periodic(rijx);
+       		rijy = periodic(rijy);
 //     rijz = periodic(rijz);
 	  
-       rij2 = rijx*rijx + rijy*rijy;// + rij.z*rij.z;
-       r1 = sqrt(rij2);
+       		rij2 = rijx*rijx + rijy*rijy;// + rij.z*rij.z;
+       		r1 = sqrt(rij2);
        /*Instead of calculating square root of "r" outside the if condition
         *we can check whether r1^2 < hbox^2 and then if the condition satisfies
         *we calcuate the square root of "r". this will be computationally 
 		*less intensive*/
-       if(r1 <= hbox){
-         bin = int(r1/delr);//Address of the particle i.e the bin number to which the particle j belongs wrt the ith partice. 
-	hist[bin] += 2.0;//this is because there are pairs. jthe particle belongs to bin and vice versa fo jthe particle
-} 
+       		if(r1 <= hbox)
+	       		{
+        		bin = int(r1/delr);//Address of the particle i.e the bin number to which the particle j belongs wrt the ith partice. 
+			hist[bin] += 2.0;//this is because there are pairs. jthe particle belongs to bin and vice versa fo jthe particle
+			} 
+		}
+	}
+rdf_count++;
 }
-}
+	
+	double idcon = 3.1415*(1/alpha);
+	double rlow, rup, ideal, rbin;
+	if(ofrdf.is_open()) {
+	for(int i=0; i<maxbin; i++)
+	{
+	rlow = double(i)*delr;
+	rup = rlow + delr;
+	ideal = idcon*(rup*rup - rlow*rlow);
+	hist[i] = hist[i]/double(number_of_colloids*rdf_count)/ideal;
+	rbin = rlow + delr/2.0;
+           	 ofrdf << rbin <<"  "<<hist[i]<< "\n";
+	}	
+	}
+	else {cerr << "unable to open file for rdf output \n";}
+    	ofrdf.close();
 
 return;
 }
 //---------------------------------THE END----------------------------------------------------------//
-
 
 
 
